@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <sodium.h>
 
+// Constants
 static char *fileMagic = "RCLONE\x00\x00";
 #define fileMagicSize 8
 #define fileNonceSize 24
@@ -13,15 +14,32 @@ static uint8_t defaultSalt[] = {
 	0xA8,0x0D,0xF4,0x3A,0x8F,0xBD,0x03,0x08,
 	0xA7,0xCA,0xB8,0x3E,0x58,0x1F,0x86,0xB1};
 
+// work buffer
 static uint8_t plainblock[blockDataSize];
 static uint8_t chiperblock[blockSize];
 
-// uint8_t dataKey[32]
+
+// Key creates all the internal keys from the password passed in using
+// scrypt.
+//
+// If salt is "" we use a fixed salt just to make attackers lives
+// slighty harder than using no salt.
+//
+// Note that empty passsword makes all 0x00 keys which is used in the
+// tests.
 int makeKey(const uint8_t *password, size_t passwordlen,
 		const uint8_t *salt, size_t saltlen,
 		uint8_t *dataKey)
 {
+	// const keySize = len(c.dataKey) + len(c.nameKey) + len(c.nameTweak)
+	// first 32bytes is used for body encryption key.
 	int keySize = 32;
+	// empty password for tests.
+	if (passwordlen == 0) {
+		memset(dataKey, 0, keySize);
+		return 0;
+	}
+	// If salt is "" then it uses a built in salt val
 	if (saltlen == 0) {
 		return crypto_pwhash_scryptsalsa208sha256_ll(
 				password, passwordlen,
@@ -36,6 +54,9 @@ int makeKey(const uint8_t *password, size_t passwordlen,
 			dataKey, keySize);
 }
 
+// inputfile: plaintext filename
+// outputfile: filename for encrypted output file
+// dataKey: body encryption key made by makeKey()
 int encrypt_file(char *inputfile, char *outputfile, const uint8_t *dataKey)
 {
 	FILE *infile = fopen(inputfile, "rb");
@@ -50,6 +71,7 @@ int encrypt_file(char *inputfile, char *outputfile, const uint8_t *dataKey)
 		return 1;
 	}
 
+	// nonce is an NACL secretbox nonce
 	// generate file nonce
 	uint8_t nonce[fileNonceSize];
 	randombytes_buf(nonce, sizeof(nonce));
@@ -78,6 +100,7 @@ int encrypt_file(char *inputfile, char *outputfile, const uint8_t *dataKey)
 
 	int i = 0;
 	size_t mlen = blockDataSize;
+	// until last block read, length < blockSize
 	while(mlen == blockDataSize) {
 		printf("block %d\n",i);
 
@@ -92,7 +115,7 @@ int encrypt_file(char *inputfile, char *outputfile, const uint8_t *dataKey)
 		if(mlen == 0)
 			break;
 
-		// encrypt block
+		// Encrypt the block using the nonce
 		if(crypto_secretbox_easy(chiperblock, plainblock, mlen, nonce, dataKey) != 0) {
 			printf("failed to seal\n");
 			fclose(infile);
@@ -100,7 +123,7 @@ int encrypt_file(char *inputfile, char *outputfile, const uint8_t *dataKey)
 			return 1;	
 		}
 
-		// if shorter block, clip length
+		// if shorter block, clip by plainblock length
 		size_t chiperlen = blockHeaderSize + mlen;
 
 		// write encrypted file
@@ -111,7 +134,7 @@ int encrypt_file(char *inputfile, char *outputfile, const uint8_t *dataKey)
 			return 1;
 		}
 
-		// increment nonce
+		// increment to add 1 to the nonce
 		sodium_increment(nonce, sizeof(nonce));
 		i++;
 	}
@@ -121,6 +144,9 @@ int encrypt_file(char *inputfile, char *outputfile, const uint8_t *dataKey)
 	return 0;
 }
 
+// inputfile: chiper filename
+// outputfile: filename for decrypted output file
+// dataKey: body encryption key made by makeKey()
 int decrypt_file(char *inputfile, char *outputfile, const uint8_t *dataKey)
 {
 	FILE *infile = fopen(inputfile, "rb");
@@ -137,6 +163,7 @@ int decrypt_file(char *inputfile, char *outputfile, const uint8_t *dataKey)
 
 	// Header check
 	uint8_t magic[fileMagicSize];
+	// check the magic
 	if(fread(magic, 1, fileMagicSize, infile) < fileMagicSize) {
 		printf("failed to read(magic) input file: %s\n", inputfile);
 		fclose(infile);
@@ -152,6 +179,7 @@ int decrypt_file(char *inputfile, char *outputfile, const uint8_t *dataKey)
 
 	// restore nonce
 	uint8_t nonce[fileNonceSize];
+	// retrieve the nonce
 	if(fread(nonce, 1, fileNonceSize, infile) < fileNonceSize) {
 		printf("failed to read(nonce) input file: %s\n", inputfile);
 		fclose(infile);
@@ -167,6 +195,7 @@ int decrypt_file(char *inputfile, char *outputfile, const uint8_t *dataKey)
 
 	int i = 0;
 	size_t clen = blockSize;
+	// until last block read, length < blockSize
 	while(clen == blockSize) {
 		printf("block %d\n",i);
 
