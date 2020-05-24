@@ -1,5 +1,6 @@
 #include <string.h>
 #include <stdio.h>
+#include <time.h>
 #include <sodium.h>
 
 // Constants
@@ -285,8 +286,18 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 	
-	if (mode == 1)
-		return encrypt_file(argv[2], argv[3], dataKey);
-	if (mode == 2)
-		return decrypt_file(argv[2], argv[3], dataKey);
+	clock_t start, end;
+	if (mode == 1) {
+		start = clock();
+		encrypt_file(argv[2], argv[3], dataKey);
+		end = clock();
+		printf("encryption time %.6f sec\n", (end - start) / (double) CLOCKS_PER_SEC  );
+	}
+	if (mode == 2) {
+		start = clock();
+		decrypt_file(argv[2], argv[3], dataKey);
+		end = clock();
+		printf("decryption time %.6f sec\n", (end - start) / (double) CLOCKS_PER_SEC  );
+	}
+	return 0;
 }
