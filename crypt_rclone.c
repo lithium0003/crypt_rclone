@@ -252,7 +252,7 @@ int main(int argc, char *argv[])
 		printf("failed to init sodium library\n");
 		return 1;
 	}
-	if (argc < 6) {
+	if (argc < 5) {
 		printf("usage: %s [c | d] (target) (output) (password) (salt)\n", argv[0]);
 		return 1;
 	}
@@ -274,7 +274,7 @@ int main(int argc, char *argv[])
 	}
 
 	char *passwd = argv[4];
-	char *salt = argv[5];
+	char *salt = (argc == 6) ? argv[5]: "";
 	int passwdlen = strlen(passwd);
 	int saltlen = strlen(salt);
 	
